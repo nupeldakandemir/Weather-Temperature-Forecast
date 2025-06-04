@@ -1,6 +1,7 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
+import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LinearRegression
@@ -8,7 +9,7 @@ from sklearn.tree import DecisionTreeRegressor
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.neighbors import KNeighborsRegressor
 from sklearn.svm import SVR
-from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
 
 # --- Veri Yükleme ve Temel Ön İşleme ---
 df = pd.read_csv("istanbul_10000_gun.csv")
@@ -18,22 +19,20 @@ df['date'] = pd.to_datetime(df['date'])
 df = df[['date', 'tavg', 'tmin', 'tmax', 'wspd', 'wdir']]
 df.dropna(inplace=True)
 
-# Yeni özellikler oluşturulan kısım
+# Yeni özellikler
 df['year'] = df['date'].dt.year
 df['month'] = df['date'].dt.month
 df['day'] = df['date'].dt.day
 
-# --- EDA (Keşifsel Veri Analizi) ---
-
+# --- EDA ---
 print("Veri Genel Bilgisi:")
 print(df.info())
 print("\nEksik Değer Sayısı:")
 print(df.isnull().sum())
-
 print("\nİstatistiksel Özet:")
 print(df.describe())
 
-#- 1) Günlük Ortalama Sıcaklık Zaman Serisi
+# 1) Zaman Serisi
 plt.figure(figsize=(15,5))
 plt.plot(df['date'], df['tavg'], label='Ortalama Sıcaklık (tavg)', color='orange')
 plt.title('İstanbul Günlük Ortalama Sıcaklık (Zaman Serisi)')
@@ -42,7 +41,7 @@ plt.ylabel('Sıcaklık (°C)')
 plt.legend()
 plt.show()
 
-#--  2) Aylara Göre Ortalama Sıcaklık Dağılımı->Boxplot
+# 2) Boxplot - Aylar
 plt.figure(figsize=(10,5))
 sns.boxplot(x='month', y='tavg', data=df)
 plt.title('Aylara Göre Ortalama Sıcaklık Dağılımı')
@@ -50,14 +49,14 @@ plt.xlabel('Ay')
 plt.ylabel('Ortalama Sıcaklık (°C)')
 plt.show()
 
-#-- 3) Korelasyon Matrisii
+# 3) Korelasyon Matrisi
 plt.figure(figsize=(8,6))
 corr = df[['tavg', 'tmin', 'tmax', 'wspd', 'wdir']].corr()
 sns.heatmap(corr, annot=True, cmap='coolwarm', fmt=".2f")
 plt.title('Özellikler Arası Korelasyon Matrisi')
 plt.show()
 
-# --4) Sıcaklık Dağılımları ->Histogramlar
+# 4) Histogramlar
 plt.figure(figsize=(12,4))
 plt.subplot(1,3,1)
 sns.histplot(df['tmin'], kde=True, color='blue')
@@ -71,7 +70,7 @@ plt.title('Maksimum Sıcaklık Dağılımı')
 plt.tight_layout()
 plt.show()
 
-#-5) Aykırı Değer Analizi -> Boxplot
+# 5) Aykırı Değer Analizi
 plt.figure(figsize=(12,4))
 plt.subplot(1,3,1)
 sns.boxplot(y=df['tmin'], color='blue')
@@ -85,7 +84,7 @@ plt.title('Maksimum Sıcaklık Boxplot')
 plt.tight_layout()
 plt.show()
 
-# --- Modelleme için Veri Hazırlığı yaptığımız yer---
+# --- Modelleme için Veri Hazırlığı ---
 features = ['tmin', 'tmax', 'wspd', 'wdir', 'month']
 X = df[features]
 y = df['tavg']
@@ -96,7 +95,7 @@ scaler = StandardScaler()
 X_train_scaled = scaler.fit_transform(X_train)
 X_test_scaled = scaler.transform(X_test)
 
-# Modelleri tanımladık--
+# --- Modeller ---
 models = {
     "Linear Regression": LinearRegression(),
     "Decision Tree": DecisionTreeRegressor(random_state=0),
@@ -108,33 +107,53 @@ models = {
 predictions = {}
 results = {}
 
-# --Modelleri eğittik ve değerlendirdim
+# --- Eğitim ve Değerlendirme ---
+y_mean = y_test.mean()
+
 for name, model in models.items():
     model.fit(X_train_scaled, y_train)
     y_pred = model.predict(X_test_scaled)
     predictions[name] = y_pred
+
     mse = mean_squared_error(y_test, y_pred)
     r2 = r2_score(y_test, y_pred)
-    results[name] = {"MSE": mse, "R²": r2}
-    print(f"{name}: MSE={mse:.3f}, R²={r2:.4f}")
+    mae = mean_absolute_error(y_test, y_pred)
+    rmse = np.sqrt(mse)
+    rae = mae / np.mean(np.abs(y_test - y_mean))
+    rrse = rmse / np.sqrt(np.mean((y_test - y_mean) ** 2))
 
-# --- Grafiklerle model karşılaştırma yaptık ---
+    results[name] = {
+        "MSE": mse,
+        "R²": r2,
+        "MAE": mae,
+        "RMSE": rmse,
+        "RAE": rae,
+        "RRSE": rrse
+    }
 
+# --- Sonuçları Yazdır ---
+print("\n--- Tüm Model Performansları ---")
+for name, metrics in results.items():
+    print(f"\n{name}")
+    for metric_name, value in metrics.items():
+        print(f"{metric_name}: {value:.4f}")
+
+# --- Grafiklerle Karşılaştırma ---
 sample_range = range(100)
+colors = ['red', 'green', 'blue', 'orange', 'purple']
 
 plt.figure(figsize=(16, 12))
 
-# --1) Tahmin vs Gerçek Değerler
+# 1) Tahmin vs Gerçek
 plt.subplot(3,1,1)
 plt.plot(sample_range, y_test.iloc[sample_range], label="Gerçek", color='black', linewidth=2)
-colors = ['red', 'green', 'blue', 'orange', 'purple']
 for i, (name, y_pred) in enumerate(predictions.items()):
     plt.plot(sample_range, y_pred[sample_range], label=name, alpha=0.7, color=colors[i])
 plt.title("Tahmin vs Gerçek - İlk 100 Test Örneği")
 plt.ylabel("Ortalama Sıcaklık (°C)")
 plt.legend()
 
-#-- 2) Hata Dağılımı -> Histogram
+# 2) Hata Dağılımı
 plt.subplot(3,1,2)
 for i, (name, y_pred) in enumerate(predictions.items()):
     errors = y_test.values - y_pred
@@ -144,7 +163,7 @@ plt.xlabel("Hata (Gerçek - Tahmin)")
 plt.ylabel("Frekans")
 plt.legend()
 
-# -- 3) Residual Plot (Tahmin Edilen vs Hata)
+# 3) Residual Plot
 plt.subplot(3,1,3)
 for i, (name, y_pred) in enumerate(predictions.items()):
     errors = y_test.values - y_pred
