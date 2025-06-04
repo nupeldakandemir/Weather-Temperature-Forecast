@@ -2,7 +2,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LinearRegression
 from sklearn.tree import DecisionTreeRegressor
@@ -15,11 +15,9 @@ from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
 df = pd.read_csv("istanbul_10000_gun.csv")
 df['date'] = pd.to_datetime(df['date'])
 
-# -- Eksik verileri ve gereksiz sütunları kaldırıyoruz
 df = df[['date', 'tavg', 'tmin', 'tmax', 'wspd', 'wdir']]
-df.dropna(inplace=True)
+df.fillna(df.mean(numeric_only=True), inplace=True)
 
-# Yeni özellikler
 df['year'] = df['date'].dt.year
 df['month'] = df['date'].dt.month
 df['day'] = df['date'].dt.day
@@ -32,7 +30,7 @@ print(df.isnull().sum())
 print("\nİstatistiksel Özet:")
 print(df.describe())
 
-# 1) Zaman Serisi
+# Zaman Serisi Grafiği
 plt.figure(figsize=(15,5))
 plt.plot(df['date'], df['tavg'], label='Ortalama Sıcaklık (tavg)', color='orange')
 plt.title('İstanbul Günlük Ortalama Sıcaklık (Zaman Serisi)')
@@ -41,7 +39,7 @@ plt.ylabel('Sıcaklık (°C)')
 plt.legend()
 plt.show()
 
-# 2) Boxplot - Aylar
+# Aylara Göre Boxplot
 plt.figure(figsize=(10,5))
 sns.boxplot(x='month', y='tavg', data=df)
 plt.title('Aylara Göre Ortalama Sıcaklık Dağılımı')
@@ -49,14 +47,14 @@ plt.xlabel('Ay')
 plt.ylabel('Ortalama Sıcaklık (°C)')
 plt.show()
 
-# 3) Korelasyon Matrisi
+# Korelasyon Matrisi
 plt.figure(figsize=(8,6))
 corr = df[['tavg', 'tmin', 'tmax', 'wspd', 'wdir']].corr()
 sns.heatmap(corr, annot=True, cmap='coolwarm', fmt=".2f")
 plt.title('Özellikler Arası Korelasyon Matrisi')
 plt.show()
 
-# 4) Histogramlar
+# Histogramlar
 plt.figure(figsize=(12,4))
 plt.subplot(1,3,1)
 sns.histplot(df['tmin'], kde=True, color='blue')
@@ -70,7 +68,7 @@ plt.title('Maksimum Sıcaklık Dağılımı')
 plt.tight_layout()
 plt.show()
 
-# 5) Aykırı Değer Analizi
+# Aykırı Değer Analizi
 plt.figure(figsize=(12,4))
 plt.subplot(1,3,1)
 sns.boxplot(y=df['tmin'], color='blue')
@@ -107,8 +105,7 @@ models = {
 predictions = {}
 results = {}
 
-# --- Eğitim ve Değerlendirme ---
-y_mean = y_test.mean()
+print("\n--- Model Eğitim ve Değerlendirme ---")
 
 for name, model in models.items():
     model.fit(X_train_scaled, y_train)
@@ -116,15 +113,24 @@ for name, model in models.items():
     predictions[name] = y_pred
 
     mse = mean_squared_error(y_test, y_pred)
-    r2 = r2_score(y_test, y_pred)
+    test_r2 = r2_score(y_test, y_pred)
     mae = mean_absolute_error(y_test, y_pred)
     rmse = np.sqrt(mse)
+    y_mean = y_test.mean()
     rae = mae / np.mean(np.abs(y_test - y_mean))
     rrse = rmse / np.sqrt(np.mean((y_test - y_mean) ** 2))
 
+    train_r2 = model.score(X_train_scaled, y_train)
+    cv_r2 = cross_val_score(model, X, y, cv=5, scoring='r2')
+    cv_mean = cv_r2.mean()
+    cv_std = cv_r2.std()
+
     results[name] = {
+        "Train R²": train_r2,
+        "Test R²": test_r2,
+        "CV R² Mean": cv_mean,
+        "CV R² Std": cv_std,
         "MSE": mse,
-        "R²": r2,
         "MAE": mae,
         "RMSE": rmse,
         "RAE": rae,
